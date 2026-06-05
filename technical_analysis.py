@@ -22,15 +22,20 @@ class TechnicalAnalyzer:
         """
         Calculate MACD (Moving Average Convergence Divergence)
         """
-        macd = ta.trend.macd(self.df['close'], window_fast=config.MACD_FAST, 
-                             window_slow=config.MACD_SLOW, window_sign=config.MACD_SIGNAL)
-        self.df['macd'] = macd
-        self.df['macd_signal'] = ta.trend.macd_signal(self.df['close'], 
-                                                       window_fast=config.MACD_FAST,
-                                                       window_slow=config.MACD_SLOW, 
-                                                       window_sign=config.MACD_SIGNAL)
-        self.df['macd_diff'] = self.df['macd'] - self.df['macd_signal']
-        return self.df['macd'].iloc[-1], self.df['macd_signal'].iloc[-1]
+        try:
+            macd_line = ta.trend.macd(self.df['close'], window_fast=config.MACD_FAST, 
+                                       window_slow=config.MACD_SLOW)
+            macd_signal = ta.trend.macd_signal(self.df['close'], 
+                                               window_fast=config.MACD_FAST,
+                                               window_slow=config.MACD_SLOW, 
+                                               window_sign=config.MACD_SIGNAL)
+            self.df['macd'] = macd_line
+            self.df['macd_signal'] = macd_signal
+            self.df['macd_diff'] = self.df['macd'] - self.df['macd_signal']
+            return self.df['macd'].iloc[-1], self.df['macd_signal'].iloc[-1]
+        except:
+            # Fallback if MACD fails
+            return 0, 0
     
     def calculate_bollinger_bands(self, period=config.BB_PERIOD, std_dev=config.BB_STD_DEV):
         """
