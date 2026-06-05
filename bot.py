@@ -66,6 +66,30 @@ class HybridTradingBot:
         
         return df
     
+    def calculate_price_targets(self, entry_price, signal):
+        """
+        Calculate Stop Loss, Target 1, and Target 2 based on signal
+        """
+        if signal == 'BUY':
+            stop_loss = entry_price * (1 - config.STOP_LOSS_PERCENT / 100)
+            target_1 = entry_price * (1 + config.TAKE_PROFIT_PERCENT / 100)
+            target_2 = entry_price * (1 + (config.TAKE_PROFIT_PERCENT * 2) / 100)
+        elif signal == 'SELL':
+            stop_loss = entry_price * (1 + config.STOP_LOSS_PERCENT / 100)
+            target_1 = entry_price * (1 - config.TAKE_PROFIT_PERCENT / 100)
+            target_2 = entry_price * (1 - (config.TAKE_PROFIT_PERCENT * 2) / 100)
+        else:
+            return None
+        
+        return {
+            'entry_price': entry_price,
+            'stop_loss': stop_loss,
+            'target_1': target_1,
+            'target_2': target_2,
+            'risk_reward_1': (target_1 - entry_price) / (entry_price - stop_loss) if entry_price != stop_loss else 0,
+            'risk_reward_2': (target_2 - entry_price) / (entry_price - stop_loss) if entry_price != stop_loss else 0
+        }
+    
     def analyze_market(self):
         """
         Analyze market using hybrid approach (Technical + ML)
@@ -137,31 +161,69 @@ class HybridTradingBot:
         else:
             return 'HOLD'
     
+    def display_trade_setup(self, signal, price):
+        """
+        Display detailed trade setup with entry, SL, and targets
+        """
+        if signal == 'HOLD':
+            logger.info(f"{Fore.YELLOW}⭕ HOLD - Bekleniyor...\n")
+            return
+        
+        targets = self.calculate_price_targets(price, signal)
+        
+        if signal == 'BUY':
+            logger.info(f"\n{Fore.GREEN}{'='*70}")
+            logger.info(f"{Fore.GREEN}🟢 BUY SİNYALİ ALINDI")
+            logger.info(f"{Fore.GREEN}{'='*70}")
+        else:
+            logger.info(f"\n{Fore.RED}{'='*70}")
+            logger.info(f"{Fore.RED}🔴 SELL SİNYALİ ALINDI")
+            logger.info(f"{Fore.RED}{'='*70}")
+        
+        # Display trade setup
+        logger.info(f"\n{Fore.CYAN}📍 GİRİŞ FİYATI (Entry): {Fore.YELLOW}{targets['entry_price']:.2f}")
+        logger.info(f"{Fore.CYAN}🛑 STOPLOSS: {Fore.RED}{targets['stop_loss']:.2f}")
+        logger.info(f"{Fore.CYAN}🎯 TARGET 1: {Fore.GREEN}{targets['target_1']:.2f} {Fore.WHITE}(Risk/Reward: {targets['risk_reward_1']:.2f}:1)")
+        logger.info(f"{Fore.CYAN}🎯 TARGET 2: {Fore.GREEN}{targets['target_2']:.2f} {Fore.WHITE}(Risk/Reward: {targets['risk_reward_2']:.2f}:1)")
+        
+        if signal == 'BUY':
+            profit_range = targets['target_2'] - targets['entry_price']
+            loss_range = targets['entry_price'] - targets['stop_loss']
+            logger.info(f"{Fore.CYAN}📊 Maksimum Kar Potansiyeli: {Fore.GREEN}{profit_range:.2f} ({(profit_range/targets['entry_price']*100):.2f}%)")
+            logger.info(f"{Fore.CYAN}📊 Maksimum Zarar Riski: {Fore.RED}{loss_range:.2f} ({(loss_range/targets['entry_price']*100):.2f}%)")
+        else:
+            profit_range = targets['entry_price'] - targets['target_2']
+            loss_range = targets['stop_loss'] - targets['entry_price']
+            logger.info(f"{Fore.CYAN}📊 Maksimum Kar Potansiyeli: {Fore.GREEN}{profit_range:.2f} ({(profit_range/targets['entry_price']*100):.2f}%)")
+            logger.info(f"{Fore.CYAN}📊 Maksimum Zarar Riski: {Fore.RED}{loss_range:.2f} ({(loss_range/targets['entry_price']*100):.2f}%)")
+        
+        logger.info(f"{Fore.CYAN}{'─'*70}\n")
+        
+        if config.DRY_RUN:
+            logger.info(f"{Fore.YELLOW}[DRY RUN] {config.TRADING_AMOUNT} {config.TRADING_SYMBOL} işlemi simüle edildi")
+            self.positions['entry_price'] = price
+            self.positions['entry_time'] = datetime.now()
+    
     def execute_trade(self, signal, price):
         """
         Execute trade based on signal
         """
         if signal == 'BUY':
-            logger.info(f"{Fore.GREEN}🟢 BUY SİNYALİ ALINDI")
             if config.DRY_RUN:
-                logger.info(f"{Fore.YELLOW}[DRY RUN] {config.TRADING_AMOUNT} {config.TRADING_SYMBOL} alınacak @ {price:.2f}")
-                self.positions['entry_price'] = price
-                self.positions['entry_time'] = datetime.now()
+                self.display_trade_setup('BUY', price)
             else:
                 logger.info(f"{Fore.GREEN}💰 GERÇEK İŞLEM: {config.TRADING_AMOUNT} {config.TRADING_SYMBOL} alınıyor...")
+                self.display_trade_setup('BUY', price)
         
         elif signal == 'SELL':
-            logger.info(f"{Fore.RED}🔴 SELL SİNYALİ ALINDI")
             if config.DRY_RUN:
-                if 'entry_price' in self.positions:
-                    profit = ((price - self.positions['entry_price']) / self.positions['entry_price']) * 100
-                    logger.info(f"{Fore.YELLOW}[DRY RUN] Kar/Zarar: {profit:.2f}%")
-                logger.info(f"{Fore.YELLOW}[DRY RUN] {config.TRADING_AMOUNT} {config.TRADING_SYMBOL} satılacak @ {price:.2f}")
+                self.display_trade_setup('SELL', price)
             else:
                 logger.info(f"{Fore.RED}💰 GERÇEK İŞLEM: {config.TRADING_AMOUNT} {config.TRADING_SYMBOL} satılıyor...")
+                self.display_trade_setup('SELL', price)
         
         else:
-            logger.info(f"{Fore.YELLOW}⭕ HOLD - Bekleniyor...")
+            logger.info(f"{Fore.YELLOW}⭕ HOLD - Bekleniyor...\n")
     
     def run(self, interval=300):
         """
@@ -175,17 +237,17 @@ class HybridTradingBot:
             iteration = 0
             while self.running:
                 iteration += 1
-                logger.info(f"\n{Fore.MAGENTA}{'='*60}")
+                logger.info(f"\n{Fore.MAGENTA}{'='*70}")
                 logger.info(f"{Fore.MAGENTA}📋 İterasyon #{iteration} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-                logger.info(f"{Fore.MAGENTA}{'='*60}")
+                logger.info(f"{Fore.MAGENTA}{'='*70}")
                 
                 analysis = self.analyze_market()
                 
                 if analysis:
-                    logger.info(f"\n{Fore.CYAN}{'─'*60}")
+                    logger.info(f"\n{Fore.CYAN}{'─'*70}")
                     logger.info(f"{Fore.CYAN}📊 FINAL SINYAL: {Fore.YELLOW}{analysis['final_signal']}{Fore.CYAN}")
-                    logger.info(f"{Fore.CYAN}💹 FİYAT: {analysis['price']:.2f}")
-                    logger.info(f"{Fore.CYAN}{'─'*60}\n")
+                    logger.info(f"{Fore.CYAN}💹 MEVCUT FİYAT: {Fore.YELLOW}{analysis['price']:.2f}")
+                    logger.info(f"{Fore.CYAN}{'─'*70}")
                     
                     self.execute_trade(analysis['final_signal'], analysis['price'])
                 
