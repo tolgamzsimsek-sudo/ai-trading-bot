@@ -6,6 +6,8 @@ from data_handler import DataHandler
 from technical_analysis import TechnicalAnalyzer
 from ml_model import MLPredictor
 from colorama import Fore, Style, init
+import numpy as np
+import pandas as pd
 
 init(autoreset=True)
 
@@ -17,15 +19,52 @@ logger = logging.getLogger(__name__)
 
 class HybridTradingBot:
     def __init__(self):
-        self.data_handler = DataHandler()
         self.running = False
         self.trade_log = []
         self.positions = {}
+        
+        # Test modunda Binance'e bağlanmayı atla
+        if config.BINANCE_API_KEY == "test":
+            self.data_handler = None
+            logger.info(f"{Fore.YELLOW}⚠️  Test modu - Binance bağlantısı atlanıyor")
+        else:
+            try:
+                self.data_handler = DataHandler()
+            except Exception as e:
+                logger.warning(f"{Fore.YELLOW}⚠️  Binance bağlantı hatası, test modu kullanılıyor: {str(e)}")
+                self.data_handler = None
+        
         logger.info(f"{Fore.GREEN}🤖 Hibrit Trading Bot Başlatıldı")
         logger.info(f"{Fore.CYAN}📊 Symbol: {config.TRADING_SYMBOL}")
         logger.info(f"{Fore.CYAN}⏱️  Timeframe: {config.TRADING_TIMEFRAME}")
         logger.info(f"{Fore.CYAN}💰 Amount: {config.TRADING_AMOUNT}")
-        logger.info(f"{Fore.YELLOW}{'🔄 DRY RUN MODE' if config.DRY_RUN else '💵 LIVE TRADING MODE'}")
+        logger.info(f"{Fore.YELLOW}{('🔄 DRY RUN MODE' if config.DRY_RUN else '💵 LIVE TRADING MODE')}")
+    
+    def generate_test_data(self):
+        """
+        Test modu için sahte veri üret
+        """
+        np.random.seed(42)
+        dates = pd.date_range(end=datetime.now(), periods=500, freq='5min')
+        
+        # Gerçekçi fiyat hareketi oluştur
+        price = 45000
+        prices = [price]
+        for _ in range(499):
+            change = np.random.normal(0, 50)
+            price += change
+            prices.append(max(price, 1000))
+        
+        df = pd.DataFrame({
+            'timestamp': dates,
+            'open': prices,
+            'high': [p + np.random.uniform(0, 100) for p in prices],
+            'low': [max(p - np.random.uniform(0, 100), 1000) for p in prices],
+            'close': [p + np.random.normal(0, 30) for p in prices],
+            'volume': np.random.uniform(100, 10000, 500)
+        })
+        
+        return df
     
     def analyze_market(self):
         """
@@ -33,8 +72,13 @@ class HybridTradingBot:
         """
         logger.info(f"{Fore.BLUE}📈 Pazar analizi başlanıyor...")
         
-        # Get historical data
-        df = self.data_handler.get_historical_data(limit=500)
+        # Test modu veri kullan
+        if self.data_handler is None or config.BINANCE_API_KEY == "test":
+            df = self.generate_test_data()
+            logger.info(f"{Fore.YELLOW}📡 Test veri kullanılıyor")
+        else:
+            df = self.data_handler.get_historical_data(limit=500)
+        
         if df is None or len(df) < 100:
             logger.error(f"{Fore.RED}❌ Yeterli veri yok")
             return None
@@ -100,12 +144,11 @@ class HybridTradingBot:
         if signal == 'BUY':
             logger.info(f"{Fore.GREEN}🟢 BUY SİNYALİ ALINDI")
             if config.DRY_RUN:
-                logger.info(f"{Fore.YELLOW}[DRY RUN] {config.TRADING_AMOUNT} {config.TRADING_SYMBOL} alınacak @ {price}")
+                logger.info(f"{Fore.YELLOW}[DRY RUN] {config.TRADING_AMOUNT} {config.TRADING_SYMBOL} alınacak @ {price:.2f}")
                 self.positions['entry_price'] = price
                 self.positions['entry_time'] = datetime.now()
             else:
                 logger.info(f"{Fore.GREEN}💰 GERÇEK İŞLEM: {config.TRADING_AMOUNT} {config.TRADING_SYMBOL} alınıyor...")
-                # Execute real order here
         
         elif signal == 'SELL':
             logger.info(f"{Fore.RED}🔴 SELL SİNYALİ ALINDI")
@@ -113,13 +156,12 @@ class HybridTradingBot:
                 if 'entry_price' in self.positions:
                     profit = ((price - self.positions['entry_price']) / self.positions['entry_price']) * 100
                     logger.info(f"{Fore.YELLOW}[DRY RUN] Kar/Zarar: {profit:.2f}%")
-                logger.info(f"{Fore.YELLOW}[DRY RUN] {config.TRADING_AMOUNT} {config.TRADING_SYMBOL} satılacak @ {price}")
+                logger.info(f"{Fore.YELLOW}[DRY RUN] {config.TRADING_AMOUNT} {config.TRADING_SYMBOL} satılacak @ {price:.2f}")
             else:
                 logger.info(f"{Fore.RED}💰 GERÇEK İŞLEM: {config.TRADING_AMOUNT} {config.TRADING_SYMBOL} satılıyor...")
-                # Execute real order here
         
         else:
-            logger.info(f"{Fore.YELLOW}⚪ HOLD - Bekleniyor...")
+            logger.info(f"{Fore.YELLOW}⭕ HOLD - Bekleniyor...")
     
     def run(self, interval=300):
         """
@@ -134,7 +176,7 @@ class HybridTradingBot:
             while self.running:
                 iteration += 1
                 logger.info(f"\n{Fore.MAGENTA}{'='*60}")
-                logger.info(f"{Fore.MAGENTA}📍 İterasyon #{iteration} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                logger.info(f"{Fore.MAGENTA}📋 İterasyon #{iteration} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                 logger.info(f"{Fore.MAGENTA}{'='*60}")
                 
                 analysis = self.analyze_market()
@@ -142,7 +184,7 @@ class HybridTradingBot:
                 if analysis:
                     logger.info(f"\n{Fore.CYAN}{'─'*60}")
                     logger.info(f"{Fore.CYAN}📊 FINAL SINYAL: {Fore.YELLOW}{analysis['final_signal']}{Fore.CYAN}")
-                    logger.info(f"{Fore.CYAN}💹 FİYAT: {analysis['price']}")
+                    logger.info(f"{Fore.CYAN}💹 FİYAT: {analysis['price']:.2f}")
                     logger.info(f"{Fore.CYAN}{'─'*60}\n")
                     
                     self.execute_trade(analysis['final_signal'], analysis['price'])
@@ -158,7 +200,6 @@ class HybridTradingBot:
             self.running = False
 
 if __name__ == "__main__":
-    import numpy as np
     bot = HybridTradingBot()
     # 5 dakika = 300 saniye
     bot.run(interval=300)
